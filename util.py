@@ -244,7 +244,7 @@ def define_model_log_prob_bpinns(models, model_loss, data, tau_priors=None, tau_
                 del x_u, y_u, x_f, y_f, u, u_x, u_y, u_xx, u_yy, pred_u, pred_f
                 torch.cuda.empty_cache()
  
-        elif model_loss is '1dinferk':
+        elif model_loss is '1dmanyinfer':
             x_u = data['x_u'].to(device)
             y_u = data['y_u'].to(device)
             pred_u = fmodel[0](x_u, params=params_unflattened[0])
