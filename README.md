@@ -1,7 +1,7 @@
 # B-PINNs (Bayesian Physics-Informed Neural Networks)
 This is the pytorch implementation of B-PINNs with Hamiltonian monte carlo algorithm.
 
-## Used library
+## Used libraries
 - pytorch 1.6.0
 - numpy 1.19.1
 - [hamiltorch](https://github.com/AdamCobb/hamiltorch)
