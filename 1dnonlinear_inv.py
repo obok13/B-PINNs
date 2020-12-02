@@ -19,8 +19,8 @@ hamiltorch.set_random_seed(123)
 prior_std = 1
 like_std = 0.1
 step_size = 0.001
-burn = 500
-num_samples = 1500
+burn = 100
+num_samples = 200
 L = 100
 layer_sizes = [1,16,16,1]
 activation = torch.tanh
@@ -39,10 +39,13 @@ N_val = 100
 
 # data
 
+exact_single = np.array([0.7])
+
 def u(x):
     return torch.sin(6*x)**3
 def f(x):
-    return 0.01 * (-108) * torch.sin(6*x)*(torch.sin(6*x)**2 - 2*torch.cos(6*x)**2) + 0.7 * torch.tanh(torch.sin(6*x)**3)
+    return 0.01 * (-108) * torch.sin(6*x)*(torch.sin(6*x)**2 - 2*torch.cos(6*x)**2) + exact_single[0] * torch.tanh(torch.sin(6*x)**3)
+
 data = {}
 data['x_u'] = torch.linspace(lb,ub,N_tr_u).view(-1,1)
 data['y_u'] = u(data['x_u']) + torch.randn_like(data['x_u'])*like_std
@@ -102,8 +105,9 @@ pred_list, log_prob_list = util.predict_model_bpinns(nets, params_hmc, data_val,
 
 print('\nExpected validation log probability: {:.3f}'.format(torch.stack(log_prob_list).mean()))
 
+print('\nThe exact values of single parameters: {}'.format(exact_single))
 params_single = torch.stack(params_hmc)[:,:n_params_single].cpu().numpy()
-print('\nThe means of single parameters: {}'.format(np.exp(params_single).mean(0)))
+print('The means of single parameters: {}'.format(np.exp(params_single).mean(0)))
 print('The variances of single parameters: {}'.format(np.exp(params_single).std(0)))
 
 pred_list_u = pred_list[0].cpu().numpy()

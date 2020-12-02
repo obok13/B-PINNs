@@ -19,8 +19,8 @@ hamiltorch.set_random_seed(123)
 prior_std = 1
 like_std = 0.1
 step_size = 0.001
-burn = 500
-num_samples = 1500
+burn = 200
+num_samples = 400
 L = 100
 layer_sizes = [1,16,16,1]
 activation = torch.tanh
@@ -40,6 +40,7 @@ N_val = 100
 
 def u(x):
     return torch.sin(6*x)**3
+
 data = {}
 x1 = torch.linspace(-0.8,-0.2,int(N_tr/2))
 x2 = torch.linspace(0.2,0.8,int(N_tr/2))

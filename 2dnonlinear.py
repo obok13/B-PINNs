@@ -19,8 +19,8 @@ hamiltorch.set_random_seed(123)
 prior_std = 1
 like_std = 0.1
 step_size = 0.001
-burn = 500
-num_samples = 1500
+burn = 200
+num_samples = 400
 L = 100
 layer_sizes = [2,16,16,1]
 activation = torch.tanh
@@ -41,6 +41,7 @@ def u(x):
     return torch.sin(np.pi*x[:,0:1]) * torch.sin(np.pi*x[:,1:2])
 def f(x):
     return 0.01 * -2*np.pi**2 * u(x) + u(x)*(u(x)**2-1)
+
 data = {}
 xb = torch.linspace(lb,ub,N_tr_b)
 xb = torch.cartesian_prod(xb,xb)
