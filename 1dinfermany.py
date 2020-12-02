@@ -28,6 +28,8 @@ model_loss = '1dinfermany'
 pde = True
 pinns = False
 epochs = 10000
+tau_priors = 1/prior_std**2
+tau_likes = 1/like_std**2
 
 lb = 0
 ub = 1
@@ -109,9 +111,9 @@ n_params_single = 2
 
 # sampling
 
-params_hmc = util.sample_model_bpinns(nets, data, model_loss=model_loss, num_samples=num_samples, num_steps_per_sample=L, step_size=step_size, burn=burn, tau_priors=1/prior_std**2, tau_likes=1/like_std**2, device=device, n_params_single=n_params_single, pde=pde, pinns=pinns, epochs=epochs)
+params_hmc = util.sample_model_bpinns(nets, data, model_loss=model_loss, num_samples=num_samples, num_steps_per_sample=L, step_size=step_size, burn=burn, tau_priors=tau_priors, tau_likes=tau_likes, device=device, n_params_single=n_params_single, pde=pde, pinns=pinns, epochs=epochs)
 
-pred_list, log_prob_list = util.predict_model_bpinns(nets, params_hmc, data_val, model_loss=model_loss, tau_priors=1/prior_std**2, tau_likes=1/like_std**2, n_params_single = n_params_single, pde = pde)
+pred_list, log_prob_list = util.predict_model_bpinns(nets, params_hmc, data_val, model_loss=model_loss, tau_priors=tau_priors, tau_likes=tau_likes, n_params_single = n_params_single, pde = pde)
 
 print('\nExpected validation log probability: {:.3f}'.format(torch.stack(log_prob_list).mean()))
 

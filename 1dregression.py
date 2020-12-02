@@ -29,7 +29,7 @@ pde = False
 pinns = False
 epochs = 10000
 tau_priors = [1,1,1,1,1,1]
-tau_likes = [1/like_std**2]
+tau_likes = 1/like_std**2
 
 lb = -1
 ub = 1
