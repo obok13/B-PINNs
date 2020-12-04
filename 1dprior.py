@@ -18,10 +18,10 @@ device = 'cpu'
 hamiltorch.set_random_seed(123)
 prior_std = 1
 like_std = 0.1
-step_size = 0.001
-burn = 200
-num_samples = 400
-L = 100
+step_size = 0.1
+burn = 1000
+num_samples = 5000
+L = 500
 layer_sizes = [1,16,16,1]
 activation = torch.tanh
 pde = False
@@ -32,29 +32,13 @@ tau_likes = 1/like_std**2
 
 lb = -1
 ub = 1
-N_tr = 32
 N_val = 100
 
 # data
 
-def u(x):
-    return torch.sin(6*x)**3
-
-data = {}
-x1 = torch.linspace(-0.8,-0.2,int(N_tr/2))
-x2 = torch.linspace(0.2,0.8,int(N_tr/2))
-data['x'] = torch.cat((x1,x2),0).view(-1,1)
-data['y'] = u(data['x']) + torch.randn_like(data['x'])*like_std
-
 data_val = {}
 data_val['x'] = torch.linspace(lb,ub,N_val).view(-1,1)
-data_val['y'] = u(data_val['x'])
-
-data['x'] = data['x'].to(device)
-data['y'] = data['y'].to(device)
-
 data_val['x'] = data_val['x'].to(device)
-data_val['y'] = data_val['y'].to(device)
 
 # model
 
@@ -86,20 +70,19 @@ nets = [net_u]
 
 def model_loss(data, fmodel, params_unflattened, tau_likes, gradients, params_single=None):
     x = data['x'].to(device)
-    y = data['y'].to(device)
     pred = fmodel[0](x, params=params_unflattened[0])
-    ll = - 0.5 * tau_likes[0] * ((pred - y) ** 2).sum(0)
+    ll = 0
     output = [pred]
 
     if torch.cuda.is_available():
-        del x, y
+        del x
         torch.cuda.empty_cache()
 
     return ll, output
 
 # sampling
 
-params_hmc = util.sample_model_bpinns(nets, data, model_loss=model_loss, num_samples=num_samples, num_steps_per_sample=L, step_size=step_size, burn=burn, tau_priors=tau_priors, tau_likes=tau_likes, device=device, pde = pde, pinns=pinns, epochs=epochs)
+params_hmc = util.sample_model_bpinns(nets, data_val, model_loss=model_loss, num_samples=num_samples, num_steps_per_sample=L, step_size=step_size, burn=burn, tau_priors=tau_priors, tau_likes=tau_likes, device=device, pde = pde, pinns=pinns, epochs=epochs)
 
 pred_list, log_prob_list = util.predict_model_bpinns(nets, params_hmc, data_val, model_loss=model_loss, tau_priors=tau_priors, tau_likes=tau_likes, pde = pde)
 
@@ -109,18 +92,9 @@ pred_list_u = pred_list[0].cpu().numpy()
 
 # plot
 
-x_val = data_val['x'].cpu().numpy()
-u_val = data_val['y'].cpu().numpy()
-x_u = data['x'].cpu().numpy()
-y_u = data['y'].cpu().numpy()
-
-plt.figure(figsize=(7,5))
-plt.plot(x_val,u_val,'r-',label='Exact')
-# plt.plot(x_val,pred_list_u.squeeze(2).T, 'b-',alpha=0.01)
-plt.plot(x_val,pred_list_u.mean(0).squeeze().T, 'b-',alpha=0.9,label ='Mean')
-plt.fill_between(x_val.reshape(-1), pred_list_u.mean(0).squeeze().T - 2*pred_list_u.std(0).squeeze().T, pred_list_u.mean(0).squeeze().T + 2*pred_list_u.std(0).squeeze().T, facecolor='b', alpha=0.2, label = '2 std')
-plt.plot(x_u,y_u,'kx',markersize=5, label='Training data')
-plt.xlim([lb,ub])
-plt.legend(fontsize=10)
-plt.show()
+cov = np.cov(pred_list_u.squeeze().T)
+extent = [lb,ub,lb,ub]
+plt.figure(figsize=(5,5))
+plt.imshow(cov, extent=extent)
+plt.colorbar()
 # %%

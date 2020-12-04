@@ -3,14 +3,14 @@ import torch.nn as nn
 import hamiltorch
 import numpy as np
 
-def build_lists(models, n_params_single=None, tau_priors=1., tau_likes=0.1, pde = False):
+def build_lists(models, n_params_single=None, tau_priors=None, tau_likes=0.1, pde = False):
 
     if n_params_single is not None:
         n_params = [n_params_single]
     else:
         n_params = []
 
-    if isinstance(tau_priors,list):
+    if isinstance(tau_priors,list) or tau_priors is None:
         build_tau_priors = False
     else:
         build_tau_priors = True
@@ -62,16 +62,15 @@ def define_model_log_prob_bpinns(models, model_loss, data, tau_priors=None, tau_
     models : list of torch.nn.Module(s)
         This is the list of torch neural network models, which will be used when performing inference.
     model_loss : str
-        This determines the likelihood to be used for the model. You can customize your own likelihood distribution by modifying `define_model_log_prob_bpinns`.
+        This determines the likelihood to be used for the model. You can customize your own likelihood distribution in main code.
     data : dictionary
         Training input output data of each model.
     tau_priors: float or list of float(s)
-        Determines the stds of gaussian priors for parameters. If this is float then it becomes std of priors for all parameters. If this is a list then each element of the list becomes std of priors for [1st single parameter, 2nd single parameter,..., weights of 1st hidden layer, bias of 1st hidden layer, weights of 2nd hidden layer, bias of 2nd hidden layer,...]
+        Determines the stds of gaussian priors for parameters. If this is None then the priors become uniform distribution. If this is float then it becomes std of priors for all parameters. If this is a list then each element of the list becomes std of priors for [1st single parameter, 2nd single parameter,..., weights of 1st hidden layer, bias of 1st hidden layer, weights of 2nd hidden layer, bias of 2nd hidden layer,...]
     tau_likes: float or list of float(s)
         Data are assumed to be collected with gaussian noise and tau_likes determines the std of noise. If this is float then it becomes std of noise for all data. If this is a list then each element of the list becomes std of noise for each element of the list of models.
     predict : bool
-        Flag to set equal to `True` when used as part of `hamiltorch.predict_model`, otherwise set to False. This controls the number of objects
-        to return.
+        Flag to set equal to `True` when used as part of `hamiltorch.predict_model`, otherwise set to False. This controls the number of objects to return.
     prior_scale : float
         Most relevant for splitting (otherwise leave as 1.0). The prior is divided by this value.
     device : name of device, or {'cpu', 'cuda'}
@@ -90,244 +89,42 @@ def define_model_log_prob_bpinns(models, model_loss, data, tau_priors=None, tau_
 
     _, params_flattened_list, n_params, tau_priors, tau_likes = build_lists(models, n_params_single, tau_priors, tau_likes, pde)
 
-    if len(tau_likes) == 1:
-        tau_likes = tau_likes[0] # If the length is 1, then release the variable from list.
+    fmodel = []
+    for model in models:
+        fmodel.append(hamiltorch.util.make_functional(model))
 
-    if len(models) == 1:
-        fmodel = hamiltorch.util.make_functional(models[0])
-    else:
-        fmodel = []
-        for model in models:
-            fmodel.append(hamiltorch.util.make_functional(model))
-
-    dist_list = []
-    for tau in tau_priors:
-        dist_list.append(torch.distributions.Normal(0, tau**-0.5))
+    if tau_priors is not None:
+        dist_list = []
+        for tau in tau_priors:
+            dist_list.append(torch.distributions.Normal(0, tau**-0.5))
 
     def log_prob_func(params):
 
-        if len(models) == 1:
-            if n_params_single is not None:
-                params_single = params[:n_params[0]]
-                params_unflattened = hamiltorch.util.unflatten(models[0], params[n_params[0]:])
-            else:
-                params_unflattened = hamiltorch.util.unflatten(models[0], params)
+        params_unflattened = []
+        if n_params_single is not None:
+            params_single = params[:n_params[0]]
+            for i in range(len(models)):
+                params_unflattened.append(hamiltorch.util.unflatten(models[0], params[n_params[i]:n_params[i+1]]))
         else:
-            params_unflattened = []
-            if n_params_single is not None:
-                params_single = params[:n_params[0]]
-                for i in range(len(models)):
-                    params_unflattened.append(hamiltorch.util.unflatten(models[0], params[n_params[i]:n_params[i+1]]))
-            else:
-                for i in range(len(models)):
-                    if i == 0:
-                        params_unflattened.append(hamiltorch.util.unflatten(models[0], params[:n_params[i]]))
-                    else:
-                        params_unflattened.append(hamiltorch.util.unflatten(models[0],params[n_params[i-1]:n_params[i]]))
+            params_single = None
+            for i in range(len(models)):
+                if i == 0:
+                    params_unflattened.append(hamiltorch.util.unflatten(models[0], params[:n_params[i]]))
+                else:
+                    params_unflattened.append(hamiltorch.util.unflatten(models[0],params[n_params[i-1]:n_params[i]]))
 
-        i_prev = 0
-        l_prior = torch.zeros_like( params[0], requires_grad=True) # Set l2_reg to be on the same device as params
-        for index, dist in zip(params_flattened_list, dist_list):
-            w = params[i_prev:index+i_prev]
-            l_prior = dist.log_prob(w).sum() + l_prior
-            i_prev += index
-
-        # Sample prior if no data
-        if data is None:
-            return l_prior/prior_scale
+        l_prior = torch.zeros_like( params[0], requires_grad=True)
+        if tau_priors is not None:
+            i_prev = 0
+            for index, dist in zip(params_flattened_list, dist_list):
+                w = params[i_prev:index+i_prev]
+                l_prior = dist.log_prob(w).sum() + l_prior
+                i_prev += index
 
         def gradients(outputs, inputs):
             return torch.autograd.grad(outputs, inputs, grad_outputs=torch.ones_like(outputs), create_graph=True)
 
-        if model_loss is 'prior':
-            x = data['x'].to(device)
-            pred = fmodel(x, params=params_unflattened)
-            ll = 0
-            output = [pred]
-
-            if torch.cuda.is_available():
-                del x
-                torch.cuda.empty_cache()
- 
-        elif model_loss is '1dregression':
-            x = data['x'].to(device)
-            y = data['y'].to(device)
-            pred = fmodel(x, params=params_unflattened)
-            ll = - 0.5 * tau_likes * ((pred - y) ** 2).sum(0)
-            output = [pred]
-
-            if torch.cuda.is_available():
-                del x, y
-                torch.cuda.empty_cache()
- 
-        elif model_loss is '1dpoisson':
-            x_u = data['x_u'].to(device)
-            y_u = data['y_u'].to(device)
-            pred_u = fmodel(x_u, params=params_unflattened)
-            ll = - 0.5 * tau_likes[0] * ((pred_u - y_u) ** 2).sum(0)
-            x_f = data['x_f'].to(device)
-            x_f = x_f.detach().requires_grad_()
-            u = fmodel(x_f, params=params_unflattened)
-            u_x = gradients(u,x_f)[0]
-            u_xx = gradients(u_x,x_f)[0]
-            pred_f = 0.01*u_xx
-            y_f = data['y_f'].to(device)
-            ll = ll - 0.5 * tau_likes[1] * ((pred_f - y_f) ** 2).sum(0)
-            output = [pred_u,pred_f]
-
-            if torch.cuda.is_available():
-                del x_u, y_u, x_f, y_f, u, u_x, u_xx, pred_u, pred_f
-                torch.cuda.empty_cache()
- 
-        elif model_loss is '1dporous':
-            x_u = data['x_u'].to(device)
-            y_u = data['y_u'].to(device)
-            pred_u = fmodel(x_u, params=params_unflattened)
-            ll = - 0.5 * tau_likes[0] * ((pred_u - y_u) ** 2).sum(0)
-            x_f = data['x_f'].to(device)
-            x_f = x_f.detach().requires_grad_()
-            u = fmodel(x_f, params=params_unflattened)
-            u_x = gradients(u,x_f)[0]
-            u_xx = gradients(u_x,x_f)[0]
-            pred_f = - 1e-3/0.4*u_xx + u
-            y_f = data['y_f'].to(device)
-            ll = ll - 0.5 * tau_likes[1] * ((pred_f - y_f) ** 2).sum(0)
-            output = [pred_u,pred_f]
-
-            if torch.cuda.is_available():
-                del x_u, y_u, x_f, y_f, u, u_x, u_xx, pred_u, pred_f
-                torch.cuda.empty_cache()
- 
-        elif model_loss is '1dnonlinear':
-            x_u = data['x_u'].to(device)
-            y_u = data['y_u'].to(device)
-            pred_u = fmodel(x_u, params=params_unflattened)
-            ll = - 0.5 * tau_likes[0] * ((pred_u - y_u) ** 2).sum(0)
-            x_f = data['x_f'].to(device)
-            x_f = x_f.detach().requires_grad_()
-            u = fmodel(x_f, params=params_unflattened)
-            u_x = gradients(u,x_f)[0]
-            u_xx = gradients(u_x,x_f)[0]
-            pred_f = 0.01*u_xx + 0.7*torch.tanh(u)
-            y_f = data['y_f'].to(device)
-            ll = ll - 0.5 * tau_likes[1] * ((pred_f - y_f) ** 2).sum(0)
-            output = [pred_u,pred_f]
-
-            if torch.cuda.is_available():
-                del x_u, y_u, x_f, y_f, u, u_x, u_xx, pred_u, pred_f
-                torch.cuda.empty_cache()
- 
-        elif model_loss is '1dnonlinear_inv':
-            x_u = data['x_u'].to(device)
-            y_u = data['y_u'].to(device)
-            pred_u = fmodel(x_u, params=params_unflattened)
-            ll = - 0.5 * tau_likes[0] * ((pred_u - y_u) ** 2).sum(0)
-            x_f = data['x_f'].to(device)
-            x_f = x_f.detach().requires_grad_()
-            u = fmodel(x_f, params=params_unflattened)
-            u_x = gradients(u,x_f)[0]
-            u_xx = gradients(u_x,x_f)[0]
-            pred_f = 0.01*u_xx + torch.exp(params_single[0])*torch.tanh(u)
-            y_f = data['y_f'].to(device)
-            ll = ll - 0.5 * tau_likes[1] * ((pred_f - y_f) ** 2).sum(0)
-            output = [pred_u,pred_f]
-
-            if torch.cuda.is_available():
-                del x_u, y_u, x_f, y_f, u, u_x, u_xx, pred_u, pred_f
-                torch.cuda.empty_cache()
- 
-        elif model_loss is '2dnonlinear':
-            x_u = data['x_u'].to(device)
-            y_u = data['y_u'].to(device)
-            pred_u = fmodel(x_u, params=params_unflattened)
-            ll = - 0.5 * tau_likes[0] * ((pred_u - y_u) ** 2).sum(0)
-            x_f = data['x_f'].to(device)
-            x_f = x_f.detach().requires_grad_()
-            u = fmodel(x_f, params=params_unflattened)
-            Du = gradients(u, x_f)[0]
-            u_x, u_y = Du[:,0:1], Du[:,1:2]
-            u_xx = gradients(u_x, x_f)[0][:,0:1]
-            u_yy = gradients(u_y, x_f)[0][:,1:2]
-            pred_f = 0.01*(u_xx+u_yy) + u*(u**2-1)
-            y_f = data['y_f'].to(device)
-            ll = ll - 0.5 * tau_likes[1] * ((pred_f - y_f) ** 2).sum(0)
-            output = [pred_u,pred_f]
-
-            if torch.cuda.is_available():
-                del x_u, y_u, x_f, y_f, u, u_x, u_y, u_xx, u_yy, pred_u, pred_f
-                torch.cuda.empty_cache()
- 
-        elif model_loss is '2dnonlinear_inv':
-            x_u = data['x_u'].to(device)
-            y_u = data['y_u'].to(device)
-            pred_u = fmodel(x_u, params=params_unflattened)
-            ll = - 0.5 * tau_likes[0] * ((pred_u - y_u) ** 2).sum(0)
-            x_f = data['x_f'].to(device)
-            x_f = x_f.detach().requires_grad_()
-            u = fmodel(x_f, params=params_unflattened)
-            Du = gradients(u, x_f)[0]
-            u_x, u_y = Du[:,0:1], Du[:,1:2]
-            u_xx = gradients(u_x, x_f)[0][:,0:1]
-            u_yy = gradients(u_y, x_f)[0][:,1:2]
-            pred_f = 0.01*(u_xx+u_yy) + torch.exp(params_single[0])*u**2
-            y_f = data['y_f'].to(device)
-            ll = ll - 0.5 * tau_likes[1] * ((pred_f - y_f) ** 2).sum(0)
-            output = [pred_u,pred_f]
-
-            if torch.cuda.is_available():
-                del x_u, y_u, x_f, y_f, u, u_x, u_y, u_xx, u_yy, pred_u, pred_f
-                torch.cuda.empty_cache()
- 
-        elif model_loss is '1dinfermany':
-            x_u = data['x_u'].to(device)
-            y_u = data['y_u'].to(device)
-            pred_u = fmodel[0](x_u, params=params_unflattened[0])
-            ll = - 0.5 * tau_likes[0] * ((pred_u - y_u) ** 2).sum(0)
-            x_k = data['x_k'].to(device)
-            y_k = data['y_k'].to(device)
-            pred_k = fmodel[1](x_k, params=params_unflattened[1])
-            ll = ll - 0.5 * tau_likes[1] * ((pred_k - y_k) ** 2).sum(0)
-            x_f = data['x_f'].to(device)
-            x_f = x_f.detach().requires_grad_()
-            u = fmodel[0](x_f, params=params_unflattened[0])
-            u_x = gradients(u,x_f)[0]
-            u_xx = gradients(u_x,x_f)[0]
-            k = fmodel[1](x_f, params=params_unflattened[1])
-            pred_f = 0.01*u_xx + k*u + torch.exp(params_single[0])*u**2 + torch.exp(params_single[1])*torch.tanh(u)
-            y_f = data['y_f'].to(device)
-            ll = ll - 0.5 * tau_likes[2] * ((pred_f - y_f) ** 2).sum(0)
-            output = [pred_u,pred_k,pred_f]
-
-            if torch.cuda.is_available():
-                del x_u, y_u, x_f, y_f, u, u_x, u_xx, k, pred_u, pred_k, pred_f
-                torch.cuda.empty_cache()
- 
-        elif model_loss is '1dinferfun':
-            x_u = data['x_u'].to(device)
-            y_u = data['y_u'].to(device)
-            pred_u = fmodel[0](x_u, params=params_unflattened[0])
-            ll = - 0.5 * tau_likes[0] * ((pred_u - y_u) ** 2).sum(0)
-            x_k = data['x_k'].to(device)
-            y_k = data['y_k'].to(device)
-            pred_k = fmodel[1](x_k, params=params_unflattened[1])
-            ll = ll - 0.5 * tau_likes[1] * ((pred_k - y_k) ** 2).sum(0)
-            x_f = data['x_f'].to(device)
-            x_f = x_f.detach().requires_grad_()
-            u = fmodel[0](x_f, params=params_unflattened[0])
-            u_x = gradients(u,x_f)[0]
-            u_xx = gradients(u_x,x_f)[0]
-            k = fmodel[1](x_f, params=params_unflattened[1])
-            pred_f = 0.01*u_xx + k*u
-            y_f = data['y_f'].to(device)
-            ll = ll - 0.5 * tau_likes[2] * ((pred_f - y_f) ** 2).sum(0)
-            output = [pred_u,pred_k,pred_f]
-
-            if torch.cuda.is_available():
-                del x_u, y_u, x_f, y_f, u, u_x, u_xx, k, pred_u, pred_k, pred_f
-                torch.cuda.empty_cache()
-
-        else:
-            raise NotImplementedError()
+        ll, output = model_loss(data, fmodel, params_unflattened, tau_likes, gradients, params_single)
 
         if predict:
             return (ll + l_prior/prior_scale), output
@@ -348,7 +145,7 @@ def sample_model_bpinns(models, data, model_loss, num_samples=10, num_steps_per_
     data : dictionary
         Training input output data of each model.
     model_loss : str
-        This determines the likelihood to be used for the model. You can customize your own likelihood distribution by modifying `define_model_log_prob_bpinns`.
+        This determines the likelihood to be used for the model. You can customize your own likelihood distribution in main code.
     num_samples : int
         Sets the number of samples corresponding to the number of momentum resampling steps/the number of trajectories to sample.
     num_steps_per_sample : int
@@ -358,12 +155,9 @@ def sample_model_bpinns(models, data, model_loss, num_samples=10, num_steps_per_
     burn : int
         Number of samples to burn before collecting samples. Set to -1 for no burning of samples. This must be less than `num_samples` as `num_samples` subsumes `burn`.
     inv_mass : torch.tensor or list
-        The inverse of the mass matrix. The inv_mass matrix is related to the covariance of the parameter space (the scale we expect it to vary). Currently this can be set
-        to either a diagonal matrix, via a torch tensor of shape (D,), or a full square matrix of shape (D,D). There is also the capability for some
-        integration schemes to implement the inv_mass matrix as a list of blocks. Hope to make that more efficient.
+        The inverse of the mass matrix. The inv_mass matrix is related to the covariance of the parameter space (the scale we expect it to vary). Currently this can be set to either a diagonal matrix, via a torch tensor of shape (D,), or a full square matrix of shape (D,D). There is also the capability for some integration schemes to implement the inv_mass matrix as a list of blocks. Hope to make that more efficient.
     jitter : float
-        Jitter is often added to the diagonal to the metric tensor to ensure it can be inverted.
-        `jitter` is a float corresponding to scale of random draws from a uniform distribution.
+        Jitter is often added to the diagonal to the metric tensor to ensure it can be inverted. `jitter` is a float corresponding to scale of random draws from a uniform distribution.
     normalizing_const : float
         This constant is currently set to 1.0 and might be removed in future versions as it plays no immediate role.
     softabs_const : float
@@ -379,16 +173,13 @@ def sample_model_bpinns(models, data, model_loss, num_samples=10, num_steps_per_
     sampler : Sampler
         Sets the type of sampler that is being used for HMC: Choice {Sampler.HMC, Sampler.RMHMC, Sampler.HMC_NUTS}.
     integrator : Integrator
-        Sets the type of integrator to be used for the leapfrog: Choice {Integrator.EXPLICIT, Integrator.IMPLICIT, Integrator.SPLITTING,
-        Integrator.SPLITTING_RAND, Integrator.SPLITTING_KMID}.
+        Sets the type of integrator to be used for the leapfrog: Choice {Integrator.EXPLICIT, Integrator.IMPLICIT, Integrator.SPLITTING, Integrator.SPLITTING_RAND, Integrator.SPLITTING_KMID}.
     metric : Metric
         Determines the metric to be used for RMHMC. E.g. default is the Hessian hamiltorch.Metric.HESSIAN.
     debug : {0, 1, 2}
-        Debug mode can take 3 options. Setting debug = 0 (default) allows the sampler to run as normal. Setting debug = 1 prints both the old and new Hamiltonians per iteration,
-        and also prints the convergence values when using the generalised leapfrog (IMPLICIT RMHMC). Setting debug = 2, ensures an additional float is returned corresponding
-        to the acceptance rate or the adapted step size (depending if NUTS is used.)
+        Debug mode can take 3 options. Setting debug = 0 (default) allows the sampler to run as normal. Setting debug = 1 prints both the old and new Hamiltonians per iteration, and also prints the convergence values when using the generalised leapfrog (IMPLICIT RMHMC). Setting debug = 2, ensures an additional float is returned corresponding to the acceptance rate or the adapted step size (depending if NUTS is used.)
     tau_priors: float or list of float(s)
-        Determines the stds of gaussian priors for parameters. If this is float then it becomes std of priors for all parameters. If this is a list then each element of the list becomes std of priors for [1st single parameter, 2nd single parameter,..., weights of 1st hidden layer, bias of 1st hidden layer, weights of 2nd hidden layer, bias of 2nd hidden layer,...]
+        Determines the stds of gaussian priors for parameters. If this is None then the priors become uniform distribution. If this is float then it becomes std of priors for all parameters. If this is a list then each element of the list becomes std of priors for [1st single parameter, 2nd single parameter,..., weights of 1st hidden layer, bias of 1st hidden layer, weights of 2nd hidden layer, bias of 2nd hidden layer,...]
     tau_likes: float or list of float(s)
         Data are assumed to be collected with gaussian noise and tau_likes determines the std of noise. If this is float then it becomes std of noise for all data. If this is a list then each element of the list becomes std of noise for each element of the list of models.
     store_on_GPU : bool
@@ -470,9 +261,9 @@ def predict_model_bpinns(models, samples, data, model_loss, tau_priors=None, tau
     data : dictionary
         Training input output data of each model.
     model_loss : str
-        This determines the likelihood to be used for the model. You can customize your own likelihood distribution by modifying `define_model_log_prob_bpinns`.
+        This determines the likelihood to be used for the model. You can customize your own likelihood distribution in main code.
     tau_priors: float or list of float(s)
-        Determines the stds of gaussian priors for parameters. If this is float then it becomes std of priors for all parameters. If this is a list then each element of the list becomes std of priors for [1st single parameter, 2nd single parameter,..., weights of 1st hidden layer, bias of 1st hidden layer, weights of 2nd hidden layer, bias of 2nd hidden layer,...]
+        Determines the stds of gaussian priors for parameters. If this is None then the priors become uniform distribution. If this is float then it becomes std of priors for all parameters. If this is a list then each element of the list becomes std of priors for [1st single parameter, 2nd single parameter,..., weights of 1st hidden layer, bias of 1st hidden layer, weights of 2nd hidden layer, bias of 2nd hidden layer,...]
     tau_likes: float or list of float(s)
         Data are assumed to be collected with gaussian noise and tau_likes determines the std of noise. If this is float then it becomes std of noise for all data. If this is a list then each element of the list becomes std of noise for each element of the list of models.
     n_params_single : int
