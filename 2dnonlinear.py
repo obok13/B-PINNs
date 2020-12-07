@@ -98,11 +98,11 @@ net_u = Net(layer_sizes, activation).to(device)
 nets = [net_u]
 
 def model_loss(data, fmodel, params_unflattened, tau_likes, gradients, params_single=None):
-    x_u = data['x_u'].to(device)
-    y_u = data['y_u'].to(device)
+    x_u = data['x_u']
+    y_u = data['y_u']
     pred_u = fmodel[0](x_u, params=params_unflattened[0])
     ll = - 0.5 * tau_likes[0] * ((pred_u - y_u) ** 2).sum(0)
-    x_f = data['x_f'].to(device)
+    x_f = data['x_f']
     x_f = x_f.detach().requires_grad_()
     u = fmodel[0](x_f, params=params_unflattened[0])
     Du = gradients(u, x_f)[0]
@@ -110,7 +110,7 @@ def model_loss(data, fmodel, params_unflattened, tau_likes, gradients, params_si
     u_xx = gradients(u_x, x_f)[0][:,0:1]
     u_yy = gradients(u_y, x_f)[0][:,1:2]
     pred_f = 0.01*(u_xx+u_yy) + u*(u**2-1)
-    y_f = data['y_f'].to(device)
+    y_f = data['y_f']
     ll = ll - 0.5 * tau_likes[1] * ((pred_f - y_f) ** 2).sum(0)
     output = [pred_u,pred_f]
 

@@ -85,8 +85,8 @@ net_u = Net(layer_sizes, activation).to(device)
 nets = [net_u]
 
 def model_loss(data, fmodel, params_unflattened, tau_likes, gradients, params_single=None):
-    x = data['x'].to(device)
-    y = data['y'].to(device)
+    x = data['x']
+    y = data['y']
     pred = fmodel[0](x, params=params_unflattened[0])
     ll = - 0.5 * tau_likes[0] * ((pred - y) ** 2).sum(0)
     output = [pred]

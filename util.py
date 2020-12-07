@@ -52,7 +52,7 @@ def build_lists(models, n_params_single=None, tau_priors=None, tau_likes=0.1, pd
     return params_shape_list, params_flattened_list, n_params, tau_priors, tau_likes
 
 
-def define_model_log_prob_bpinns(models, model_loss, data, tau_priors=None, tau_likes=None, predict=False, prior_scale = 1.0, device = 'cpu', n_params_single = None, pde = False):
+def define_model_log_prob_bpinns(models, model_loss, data, tau_priors=None, tau_likes=None, predict=False, prior_scale = 1.0, n_params_single = None, pde = False):
 
     """This function defines the `log_prob_func` for torch nn.Modules. This will then be passed into the hamiltorch sampler. This is an important
     function for any work with Bayesian neural networks.
@@ -73,8 +73,6 @@ def define_model_log_prob_bpinns(models, model_loss, data, tau_priors=None, tau_
         Flag to set equal to `True` when used as part of `hamiltorch.predict_model`, otherwise set to False. This controls the number of objects to return.
     prior_scale : float
         Most relevant for splitting (otherwise leave as 1.0). The prior is divided by this value.
-    device : name of device, or {'cpu', 'cuda'}
-        The device to run on.
     n_params_single : int
         The number of single parameters that have to be inferred.
     pde : bool
@@ -104,14 +102,14 @@ def define_model_log_prob_bpinns(models, model_loss, data, tau_priors=None, tau_
         if n_params_single is not None:
             params_single = params[:n_params[0]]
             for i in range(len(models)):
-                params_unflattened.append(hamiltorch.util.unflatten(models[0], params[n_params[i]:n_params[i+1]]))
+                params_unflattened.append(hamiltorch.util.unflatten(models[i], params[n_params[i]:n_params[i+1]]))
         else:
             params_single = None
             for i in range(len(models)):
                 if i == 0:
-                    params_unflattened.append(hamiltorch.util.unflatten(models[0], params[:n_params[i]]))
+                    params_unflattened.append(hamiltorch.util.unflatten(models[i], params[:n_params[i]]))
                 else:
-                    params_unflattened.append(hamiltorch.util.unflatten(models[0],params[n_params[i-1]:n_params[i]]))
+                    params_unflattened.append(hamiltorch.util.unflatten(models[i] ,params[n_params[i-1]:n_params[i]]))
 
         l_prior = torch.zeros_like( params[0], requires_grad=True)
         if tau_priors is not None:
@@ -220,7 +218,7 @@ def sample_model_bpinns(models, data, model_loss, num_samples=10, num_steps_per_
     # params_init = torch.randn_like(params_init)
     print('Parameter size: ', params_init.shape[0])
 
-    log_prob_func = define_model_log_prob_bpinns(models, model_loss, data, tau_priors, tau_likes, device = device, n_params_single = n_params_single, pde = pde)
+    log_prob_func = define_model_log_prob_bpinns(models, model_loss, data, tau_priors, tau_likes, n_params_single = n_params_single, pde = pde)
 
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
@@ -282,7 +280,7 @@ def predict_model_bpinns(models, samples, data, model_loss, tau_priors=None, tau
 
     if pde:
 
-        log_prob_func = define_model_log_prob_bpinns(models, model_loss, data, tau_priors, tau_likes, predict=True, device = samples[0].device, n_params_single = n_params_single, pde = pde)
+        log_prob_func = define_model_log_prob_bpinns(models, model_loss, data, tau_priors, tau_likes, predict=True, n_params_single = n_params_single, pde = pde)
 
         pred_log_prob_list = []
         pred_list = []
@@ -308,7 +306,7 @@ def predict_model_bpinns(models, samples, data, model_loss, tau_priors=None, tau
     else:
         with torch.no_grad():
 
-            log_prob_func = define_model_log_prob_bpinns(models, model_loss, data, tau_priors, tau_likes, predict=True, device = samples[0].device, n_params_single = n_params_single, pde = pde)
+            log_prob_func = define_model_log_prob_bpinns(models, model_loss, data, tau_priors, tau_likes, predict=True, n_params_single = n_params_single, pde = pde)
 
             pred_log_prob_list = []
             pred_list = []
