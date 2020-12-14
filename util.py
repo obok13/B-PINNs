@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import hamiltorch
 import numpy as np
+import time
 
 def build_lists(models, n_params_single=None, tau_priors=None, tau_likes=0.1, pde = False):
 
@@ -223,6 +224,7 @@ def sample_model_bpinns(models, data, model_loss, num_samples=10, num_steps_per_
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
+    start_time = time.time()
     if pinns:
         params = params_init.clone().detach().requires_grad_()
         optimizer = torch.optim.Adam([params], lr=step_size)
@@ -233,7 +235,7 @@ def sample_model_bpinns(models, data, model_loss, num_samples=10, num_steps_per_
             optimizer.step()
 
             if epoch%100==0:
-                print('[Epoch]'+str(epoch)+', loss:'+str(loss.detach()))
+                print('Epoch: %d, loss: %.6f, time: %.2f' % (epoch, loss.detach().item(), time.time() - start_time))
 
         if not store_on_GPU:
             ret_params = [params.clone().detach().cpu()]
