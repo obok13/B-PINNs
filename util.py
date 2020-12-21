@@ -133,7 +133,7 @@ def define_model_log_prob_bpinns(models, model_loss, data, tau_priors=None, tau_
     return log_prob_func
 
 
-def sample_model_bpinns(models, data, model_loss, num_samples=10, num_steps_per_sample=10, step_size=0.1, burn=0, inv_mass=None, jitter=None, normalizing_const=1., softabs_const=None, explicit_binding_const=100, fixed_point_threshold=1e-5, fixed_point_max_iterations=1000, jitter_max_tries=10, sampler=hamiltorch.Sampler.HMC, integrator=hamiltorch.Integrator.IMPLICIT, metric=hamiltorch.Metric.HESSIAN, debug=False, tau_priors=None, tau_likes=None, store_on_GPU = True, desired_accept_rate=0.8, device = 'cpu', n_params_single = None, pde = False, pinns = False, epochs = 10000):
+def sample_model_bpinns(models, data, model_loss, num_samples=10, num_steps_per_sample=10, step_size=0.1, burn=0, inv_mass=None, jitter=None, normalizing_const=1., softabs_const=None, explicit_binding_const=100, fixed_point_threshold=1e-5, fixed_point_max_iterations=1000, jitter_max_tries=10, sampler=hamiltorch.Sampler.HMC, integrator=hamiltorch.Integrator.IMPLICIT, metric=hamiltorch.Metric.HESSIAN, debug=False, tau_priors=None, tau_likes=None, store_on_GPU = True, desired_accept_rate=0.8, device = 'cpu', n_params_single = None, pde = False, pinns = False, epochs = 10000, params_init_val = None):
 
     """Sample weights from a NN model to perform inference. This function builds a `log_prob_func` from the torch.nn.Module and passes it to `hamiltorch.sample`.
 
@@ -217,7 +217,8 @@ def sample_model_bpinns(models, data, model_loss, num_samples=10, num_steps_per_
         params_init = torch.cat((params_init,params_init_net))
 
     # params_init = torch.randn_like(params_init)
-    print('Parameter size: ', params_init.shape[0])
+    if params_init_val is not None:
+        params_init = params_init_val
 
     log_prob_func = define_model_log_prob_bpinns(models, model_loss, data, tau_priors, tau_likes, n_params_single = n_params_single, pde = pde)
 
@@ -295,8 +296,7 @@ def predict_model_bpinns(models, samples, data, model_loss, tau_priors=None, tau
             pred_log_prob_list.append(lp.detach()) # Side effect is to update weights to be s
             for i in range(len(pred_list)):
                 pred_list[i].append(pred[i].detach())
-        
-        _, pred = log_prob_func(samples[0])
+
         for i in range(len(pred_list)):
             pred_list[i] = torch.stack(pred_list[i])
 
@@ -321,8 +321,7 @@ def predict_model_bpinns(models, samples, data, model_loss, tau_priors=None, tau
                 pred_log_prob_list.append(lp.detach()) # Side effect is to update weights to be s
                 for i in range(len(pred_list)):
                     pred_list[i].append(pred[i].detach())
-            
-            _, pred = log_prob_func(samples[0])
+
             for i in range(len(pred_list)):
                 pred_list[i] = torch.stack(pred_list[i])
 

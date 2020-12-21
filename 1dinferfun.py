@@ -61,19 +61,10 @@ data_val['y_f'] = f(data_val['x_f'])
 data_val['x_k'] = torch.linspace(lb,ub,N_val).view(-1,1)
 data_val['y_k'] = k(data_val['x_k'])
 
-data['x_u'] = data['x_u'].to(device)
-data['y_u'] = data['y_u'].to(device)
-data['x_f'] = data['x_f'].to(device)
-data['y_f'] = data['y_f'].to(device)
-data['x_k'] = data['x_k'].to(device)
-data['y_k'] = data['y_k'].to(device)
-
-data_val['x_u'] = data_val['x_u'].to(device)
-data_val['y_u'] = data_val['y_u'].to(device)
-data_val['x_f'] = data_val['x_f'].to(device)
-data_val['y_f'] = data_val['y_f'].to(device)
-data_val['x_k'] = data_val['x_k'].to(device)
-data_val['y_k'] = data_val['y_k'].to(device)
+for d in data:
+    data[d] = data[d].to(device)
+for d in data_val:
+    data_val[d] = data_val[d].to(device)
 
 # model
 

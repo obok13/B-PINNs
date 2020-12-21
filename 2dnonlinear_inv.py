@@ -62,15 +62,10 @@ data_val['y_u'] = u(data_val['x_u'])
 data_val['x_f'] = torch.cartesian_prod(xu,xu)
 data_val['y_f'] = f(data_val['x_f'])
 
-data['x_u'] = data['x_u'].to(device)
-data['y_u'] = data['y_u'].to(device)
-data['x_f'] = data['x_f'].to(device)
-data['y_f'] = data['y_f'].to(device)
-
-data_val['x_u'] = data_val['x_u'].to(device)
-data_val['y_u'] = data_val['y_u'].to(device)
-data_val['x_f'] = data_val['x_f'].to(device)
-data_val['y_f'] = data_val['y_f'].to(device)
+for d in data:
+    data[d] = data[d].to(device)
+for d in data_val:
+    data_val[d] = data_val[d].to(device)
 
 # model
 
