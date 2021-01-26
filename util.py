@@ -45,7 +45,7 @@ def build_lists(models, n_params_single=None, tau_priors=None, tau_likes=0.1, pd
                 tau_priors.append(tau_priors_elt)
 
     # if we deal with pde then we also have data of residual
-    if pde:
+    if pde and build_tau_likes:
         tau_likes.append(tau_likes_elt)
 
     n_params = list(np.cumsum(n_params))
@@ -62,8 +62,8 @@ def define_model_log_prob_bpinns(models, model_loss, data, tau_priors=None, tau_
     ----------
     models : list of torch.nn.Module(s)
         This is the list of torch neural network models, which will be used when performing inference.
-    model_loss : str
-        This determines the likelihood to be used for the model. You can customize your own likelihood distribution in main code.
+    model_loss : function
+        This determines the likelihood to be used for the model. You can customize this function in main code.
     data : dictionary
         Training input output data of each model.
     tau_priors: float or list of float(s)
@@ -143,8 +143,8 @@ def sample_model_bpinns(models, data, model_loss, num_samples=10, num_steps_per_
         This is the list of torch neural network models, which will be used when performing inference.
     data : dictionary
         Training input output data of each model.
-    model_loss : str
-        This determines the likelihood to be used for the model. You can customize your own likelihood distribution in main code.
+    model_loss : function
+        This determines the likelihood to be used for the model. You can customize this function in main code.
     num_samples : int
         Sets the number of samples corresponding to the number of momentum resampling steps/the number of trajectories to sample.
     num_steps_per_sample : int
@@ -261,8 +261,8 @@ def predict_model_bpinns(models, samples, data, model_loss, tau_priors=None, tau
         A list, where each element is a torch.tensor of shape (D,), where D is the number of parameters of the model. The length of the list is given by the number of samples, S.
     data : dictionary
         Training input output data of each model.
-    model_loss : str
-        This determines the likelihood to be used for the model. You can customize your own likelihood distribution in main code.
+    model_loss : function
+        This determines the likelihood to be used for the model. You can customize this function in main code.
     tau_priors: float or list of float(s)
         Determines the stds of gaussian priors for parameters. If this is None then the priors become uniform distribution. If this is float then it becomes std of priors for all parameters. If this is a list then each element of the list becomes std of priors for [1st single parameter, 2nd single parameter,..., weights of 1st hidden layer, bias of 1st hidden layer, weights of 2nd hidden layer, bias of 2nd hidden layer,...]
     tau_likes: float or list of float(s)
