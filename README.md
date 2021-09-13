@@ -1,7 +1,7 @@
 # B-PINNs (Bayesian Physics-Informed Neural Networks)
 This is the pytorch implementation of B-PINNs with Hamiltonian monte carlo algorithm.
 
-B-PINN에 관한 설명은 제 [블로그](https://obok13.github.io/2021/03/24/pinn.html)에 있습니다.
+B-PINN에 관한 설명은 제 [블로그](https://www.notion.so/Physics-informed-neural-network-ee8cd5fa9ca243bfa5d7ce8d75370788)에 있습니다.
 
 ## Used libraries
 - pytorch 1.6.0
